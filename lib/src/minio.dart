@@ -360,6 +360,53 @@ class Minio {
     );
   }
 
+  /// get a readable stream of the partial object content.
+  Future<MinioByteStream> selectObjectContent(
+    String bucket,
+    String object,
+    String payload, [
+    int? offset,
+    int? length,
+  ]) async {
+    assert(offset == null || offset >= 0);
+    assert(length == null || length > 0);
+
+    MinioInvalidBucketNameError.check(bucket);
+    MinioInvalidObjectNameError.check(object);
+
+    String? range;
+    if (offset != null || length != null) {
+      if (offset != null) {
+        range = 'bytes=$offset-';
+      } else {
+        range = 'bytes=0-';
+        offset = 0;
+      }
+      if (length != null) {
+        range += '${(length + offset) - 1}';
+      }
+    }
+
+    final headers = range != null ? {'range': range} : null;
+    final expectedStatus = range != null ? 206 : 200;
+
+    final resp = await _client.requestStream(
+      method: 'POST',
+      bucket: bucket,
+      object: object,
+      headers: headers,
+      payload: payload,
+      queries: {'select': '', 'select-type': 2},
+    );
+
+    await validateStreamed(resp, expect: expectedStatus);
+
+    return MinioByteStream.fromStream(
+      stream: resp.stream,
+      contentLength: resp.contentLength,
+    );
+  }
+
   /// Initiate a new multipart upload.
   Future<String> initiateNewMultipartUpload(
     String bucket,
